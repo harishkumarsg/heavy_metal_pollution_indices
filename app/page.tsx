@@ -1,5 +1,6 @@
 import { LoginForm } from "@/components/login-form"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { Droplets, Shield, BarChart3, MapPin } from "lucide-react"
 
 export default function HomePage() {
@@ -18,6 +19,7 @@ export default function HomePage() {
                 <p className="text-sm text-muted-foreground">Heavy Metal Pollution Indices</p>
               </div>
             </div>
+            <ThemeToggle />
           </div>
         </div>
       </header>

@@ -1,11 +1,14 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts"
-import { AlertTriangle, CheckCircle, TrendingUp, Droplets, MapPin, Users, FileText } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts"
+import { AlertTriangle, CheckCircle, TrendingUp, Droplets, MapPin, Users, FileText, RefreshCw, Filter, Activity, Zap } from "lucide-react"
 
 const pollutionData = [
   { location: "Delhi", hmpi: 85, status: "Critical" },

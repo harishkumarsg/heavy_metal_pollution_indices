@@ -11,6 +11,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
+import { ThemeToggle } from "@/components/ui/theme-toggle"
 import { Droplets, Bell, Settings, LogOut, User } from "lucide-react"
 
 export function DashboardHeader() {
@@ -32,6 +33,9 @@ export function DashboardHeader() {
           <Badge variant="outline" className="text-xs">
             Production
           </Badge>
+
+          {/* Theme Toggle */}
+          <ThemeToggle />
 
           {/* Notifications */}
           <Button variant="ghost" size="sm" className="relative">
