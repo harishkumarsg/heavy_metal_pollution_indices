@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useMemo } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
@@ -8,6 +8,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, BarChart, Bar } from "recharts"
 import { TrendingUp, TrendingDown, Activity, Calendar, AlertTriangle, Download, RefreshCw } from "lucide-react"
+import { useRealTimeData } from "@/contexts/real-time-data-context"
 
 // Generate historical data for the last 12 months
 const generateHistoricalData = () => {
@@ -36,32 +37,180 @@ const generateHistoricalData = () => {
   }))
 }
 
-const seasonalData = [
-  { season: 'Winter', avgHMPI: 65, samples: 156, alerts: 12 },
-  { season: 'Spring', avgHMPI: 78, samples: 142, alerts: 28 },
-  { season: 'Summer', avgHMPI: 95, samples: 189, alerts: 45 },
-  { season: 'Monsoon', avgHMPI: 72, samples: 134, alerts: 18 }
-]
-
 export function TrendAnalysis() {
   const [timeRange, setTimeRange] = useState("12months")
   const [selectedMetal, setSelectedMetal] = useState("hmpi")
-  const [historicalData, setHistoricalData] = useState(generateHistoricalData())
   const [isLoading, setIsLoading] = useState(false)
+  const { state, startRealTimeUpdates } = useRealTimeData()
 
-  const currentHMPI = historicalData[historicalData.length - 1]?.hmpi || 0
+  // Process real-time historical data for trend analysis
+  const processedHistoricalData = useMemo(() => {
+    if (!state.historicalData.length) {
+      return generateHistoricalData() // Fallback to simulated data
+    }
+
+    // Group historical data by time periods (hours, days, weeks, months based on timeRange)
+    const timeGrouping = {
+      "3months": 24 * 7, // Group by weeks
+      "6months": 24 * 15, // Group by 2-week periods  
+      "12months": 24 * 30, // Group by months
+      "2years": 24 * 60 // Group by 2-month periods
+    }
+
+    const groupingHours = timeGrouping[timeRange as keyof typeof timeGrouping] || 24 * 30
+    const now = new Date()
+    const groups: any[] = []
+
+    // Calculate how many time periods to show
+    const periodsToShow = {
+      "3months": 12, // 12 weeks
+      "6months": 12, // 12 periods of 2 weeks
+      "12months": 12, // 12 months
+      "2years": 12 // 12 periods of 2 months
+    }
+
+    const numPeriods = periodsToShow[timeRange as keyof typeof periodsToShow] || 12
+
+    for (let i = numPeriods - 1; i >= 0; i--) {
+      const periodEnd = new Date(now.getTime() - (i * groupingHours * 60 * 60 * 1000))
+      const periodStart = new Date(periodEnd.getTime() - (groupingHours * 60 * 60 * 1000))
+
+      // Filter data for this time period
+      const periodData = state.historicalData.filter(d => 
+        d.timestamp >= periodStart && d.timestamp <= periodEnd
+      )
+
+      if (periodData.length > 0) {
+        // Calculate averages for this period
+        const avgHMPI = periodData.reduce((sum, d) => sum + d.hmpi, 0) / periodData.length
+        
+        // Calculate metal averages
+        const metalSums: { [key: string]: { total: number, count: number } } = {}
+        periodData.forEach(d => {
+          d.metals.forEach(metal => {
+            if (!metalSums[metal.metal]) metalSums[metal.metal] = { total: 0, count: 0 }
+            metalSums[metal.metal].total += metal.value
+            metalSums[metal.metal].count++
+          })
+        })
+
+        const metalAverages: { [key: string]: number } = {}
+        Object.keys(metalSums).forEach(metal => {
+          metalAverages[metal.toLowerCase()] = metalSums[metal].total / metalSums[metal].count
+        })
+
+        groups.push({
+          month: periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          hmpi: Number(avgHMPI.toFixed(1)),
+          lead: (metalAverages['lead'] || 45) / 1000, // Convert to mg/L
+          mercury: (metalAverages['mercury'] || 15) / 10000,
+          cadmium: (metalAverages['cadmium'] || 28) / 10000,
+          arsenic: (metalAverages['arsenic'] || 32) / 1000,
+          chromium: (metalAverages['chromium'] || 38) / 1000,
+          temperature: periodData.reduce((sum, d) => sum + d.temperature, 0) / periodData.length,
+          samples: periodData.length,
+          alerts: periodData.filter(d => d.hmpi > 100).length
+        })
+      } else {
+        // Use fallback data if no real data available for this period
+        const fallbackData = generateHistoricalData()[i % 12]
+        groups.push({
+          ...fallbackData,
+          month: periodEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          samples: 0,
+          alerts: 0
+        })
+      }
+    }
+
+    return groups
+  }, [state.historicalData, timeRange])
+
+  const historicalData = processedHistoricalData
+  const currentHMPI = state.currentData.length > 0 ? 
+    state.currentData.reduce((sum, d) => sum + d.hmpi, 0) / state.currentData.length :
+    historicalData[historicalData.length - 1]?.hmpi || 0
+  
   const previousHMPI = historicalData[historicalData.length - 2]?.hmpi || 0
   const trend = currentHMPI - previousHMPI
   const trendPercentage = previousHMPI > 0 ? ((trend / previousHMPI) * 100) : 0
 
+  // Seasonal analysis data based on real-time data
+  const seasonalData = useMemo(() => {
+    if (!state.historicalData.length) {
+      // Fallback seasonal data
+      return [
+        { season: 'Winter', avgHMPI: 65, samples: 156, alerts: 12 },
+        { season: 'Spring', avgHMPI: 78, samples: 142, alerts: 28 },
+        { season: 'Summer', avgHMPI: 95, samples: 189, alerts: 45 },
+        { season: 'Monsoon', avgHMPI: 72, samples: 134, alerts: 18 }
+      ]
+    }
+
+    // Group historical data by seasons
+    const seasonalGroups: { [key: string]: { hmpi: number[], count: number, alerts: number } } = {
+      Spring: { hmpi: [], count: 0, alerts: 0 },
+      Summer: { hmpi: [], count: 0, alerts: 0 },
+      Monsoon: { hmpi: [], count: 0, alerts: 0 },
+      Winter: { hmpi: [], count: 0, alerts: 0 }
+    }
+
+    state.historicalData.forEach(data => {
+      const month = data.timestamp.getMonth() + 1 // 1-12
+      let season = 'Spring'
+      
+      if (month >= 3 && month <= 5) season = 'Spring'
+      else if (month >= 6 && month <= 8) season = 'Summer' 
+      else if (month >= 9 && month <= 11) season = 'Monsoon'
+      else season = 'Winter'
+
+      seasonalGroups[season].hmpi.push(data.hmpi)
+      seasonalGroups[season].count++
+      if (data.hmpi > 100) seasonalGroups[season].alerts++
+    })
+
+    return Object.keys(seasonalGroups).map(season => ({
+      season,
+      avgHMPI: seasonalGroups[season].hmpi.length > 0 ?
+        Number((seasonalGroups[season].hmpi.reduce((sum, val) => sum + val, 0) / seasonalGroups[season].hmpi.length).toFixed(0)) :
+        75,
+      samples: seasonalGroups[season].count,
+      alerts: seasonalGroups[season].alerts
+    }))
+  }, [state.historicalData])
+
   const refreshData = async () => {
     setIsLoading(true)
-    // Simulate API call
+    startRealTimeUpdates()
     setTimeout(() => {
-      setHistoricalData(generateHistoricalData())
       setIsLoading(false)
     }, 1000)
   }
+
+  // Calculate dynamic insights from real data
+  const dynamicInsights = useMemo(() => {
+    if (seasonalData.length === 0) return null
+
+    const summerData = seasonalData.find(s => s.season === 'Summer')
+    const winterData = seasonalData.find(s => s.season === 'Winter')
+    const monsoonData = seasonalData.find(s => s.season === 'Monsoon')
+    
+    const avgHMPI = seasonalData.reduce((sum, s) => sum + s.avgHMPI, 0) / seasonalData.length
+    
+    return {
+      summerVsAverage: summerData ? 
+        Math.round(((summerData.avgHMPI - avgHMPI) / avgHMPI) * 100) : 35,
+      monsoonReduction: monsoonData && summerData ? 
+        Math.round(((summerData.avgHMPI - monsoonData.avgHMPI) / summerData.avgHMPI) * 100) : 24,
+      totalSamples: seasonalData.reduce((sum, s) => sum + s.samples, 0),
+      highestSeason: seasonalData.reduce((prev, current) => 
+        (prev.avgHMPI > current.avgHMPI) ? prev : current
+      ),
+      lowestSeason: seasonalData.reduce((prev, current) => 
+        (prev.avgHMPI < current.avgHMPI) ? prev : current
+      )
+    }
+  }, [seasonalData])
 
   const getMetalTrend = (metalKey: string) => {
     const current = historicalData[historicalData.length - 1]?.[metalKey as keyof typeof historicalData[0]] || 0
@@ -209,7 +358,7 @@ export function TrendAnalysis() {
                     <div>
                       <p className="font-medium">Seasonal Variation</p>
                       <p className="text-xs text-muted-foreground">
-                        Summer months show 35% higher pollution levels
+                        Summer months show {(dynamicInsights?.summerVsAverage ?? 0) > 0 ? '+' : ''}{dynamicInsights?.summerVsAverage ?? 35}% {(dynamicInsights?.summerVsAverage ?? 0) > 0 ? 'higher' : 'lower'} pollution levels
                       </p>
                     </div>
                   </div>
@@ -229,7 +378,7 @@ export function TrendAnalysis() {
                     <div>
                       <p className="font-medium">Improvement Potential</p>
                       <p className="text-xs text-muted-foreground">
-                        Monsoon period shows natural pollution reduction
+                        Monsoon period shows {dynamicInsights?.monsoonReduction ?? 24}% natural pollution reduction
                       </p>
                     </div>
                   </div>

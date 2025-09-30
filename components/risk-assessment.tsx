@@ -90,10 +90,86 @@ const vulnerableGroups = [
   { group: "Immunocompromised", population: 180, riskMultiplier: 2.5, priority: "High" }
 ]
 
+// Helper function to get realistic population data for different locations
+function getPopulationForLocation(location: string): number {
+  const populationMap: { [key: string]: number } = {
+    "Delhi": 2500000,
+    "Mumbai": 1850000,
+    "Chennai": 950000,
+    "Kolkata": 1200000,
+    "Bangalore": 1100000,
+    "Hyderabad": 890000,
+    "Pune": 750000,
+    "Ahmedabad": 680000
+  }
+  
+  // Find matching city in location string
+  for (const city in populationMap) {
+    if (location.toLowerCase().includes(city.toLowerCase())) {
+      return populationMap[city]
+    }
+  }
+  
+  // Default fallback for unknown locations
+  return 500000
+}
+
 export function RiskAssessment() {
   const [activeTab, setActiveTab] = useState("overview")
   const { state } = useRealTimeData()
   
+  // Calculate dynamic risk factors based on real data
+  const dynamicRiskFactors = useMemo(() => {
+    if (!state.currentData.length) {
+      // Fallback to static data if no real data available
+      return riskFactors
+    }
+
+    // Calculate overall metrics from current data
+    const totalCriticalAlerts = state.currentData.reduce((sum, location) => 
+      sum + location.metals.filter(metal => metal.status === 'critical').length, 0)
+    
+    const avgHMPI = state.currentData.reduce((sum, location) => sum + location.hmpi, 0) / state.currentData.length
+    
+    const totalPopulationAffected = state.currentData.reduce((sum, location) => 
+      sum + getPopulationForLocation(location.location), 0)
+
+    return [
+      {
+        category: "Acute Exposure", 
+        level: avgHMPI > 80 ? "Critical" : avgHMPI > 60 ? "High" : avgHMPI > 40 ? "Medium" : "Low",
+        score: Math.round(avgHMPI * 0.9), // Scale HMPI to risk score
+        color: avgHMPI > 80 ? "text-red-600" : avgHMPI > 60 ? "text-red-500" : avgHMPI > 40 ? "text-orange-500" : "text-green-500",
+        icon: AlertTriangle,
+        description: "Immediate health effects from short-term exposure"
+      },
+      {
+        category: "Chronic Exposure",
+        level: totalCriticalAlerts > 5 ? "Critical" : totalCriticalAlerts > 2 ? "High" : "Moderate", 
+        score: Math.min(95, Math.round(avgHMPI * 1.1 + totalCriticalAlerts * 5)), // Higher for chronic effects
+        color: totalCriticalAlerts > 5 ? "text-red-600" : totalCriticalAlerts > 2 ? "text-red-500" : "text-orange-500",
+        icon: Heart,
+        description: "Long-term health effects from prolonged exposure"
+      },
+      {
+        category: "Population Impact",
+        level: totalPopulationAffected > 5000000 ? "Critical" : totalPopulationAffected > 2000000 ? "High" : "Moderate",
+        score: Math.round(Math.min(85, (totalPopulationAffected / 100000) * 2)), // Population-based scoring
+        color: totalPopulationAffected > 5000000 ? "text-red-600" : totalPopulationAffected > 2000000 ? "text-red-500" : "text-orange-500", 
+        icon: Users,
+        description: "Number of people potentially affected"
+      },
+      {
+        category: "Environmental",
+        level: avgHMPI > 70 ? "High" : avgHMPI > 50 ? "Medium" : "Low",
+        score: Math.round(avgHMPI * 0.8 + totalCriticalAlerts * 3), // Environmental impact scoring
+        color: avgHMPI > 70 ? "text-yellow-600" : avgHMPI > 50 ? "text-yellow-500" : "text-green-500",
+        icon: Zap,
+        description: "Ecosystem and environmental damage"
+      }
+    ]
+  }, [state.currentData])
+
   // Calculate real-time risk assessments for all locations
   const realTimeRiskAssessments = useMemo(() => {
     return state.currentData.map(locationData => {
@@ -146,7 +222,7 @@ export function RiskAssessment() {
                        currentRisk === "Medium" ? "Enhanced monitoring needed" :
                        "Continue regular monitoring",
         healthImpact: currentRisk,
-        populationAffected: Math.round(Math.random() * 2000000 + 500000), // Simulated
+        populationAffected: getPopulationForLocation(locationData.location),
         immediateActions: currentRisk === "High" ? 
           ["Water supply cut-off", "Medical screening", "Emergency response team"] :
           currentRisk === "Medium" ?
@@ -159,8 +235,46 @@ export function RiskAssessment() {
   const overallRiskScore = Math.round(
     realTimeRiskAssessments.length > 0 ? 
       realTimeRiskAssessments.reduce((sum, assessment) => sum + assessment.riskScore, 0) / realTimeRiskAssessments.length :
-      riskFactors.reduce((sum, factor) => sum + factor.score, 0) / riskFactors.length
+      dynamicRiskFactors.reduce((sum, factor) => sum + factor.score, 0) / dynamicRiskFactors.length
   )
+
+  // Calculate dynamic vulnerable groups based on current risk levels
+  const dynamicVulnerableGroups = useMemo(() => {
+    const totalPopulation = state.currentData.reduce((sum, location) => 
+      sum + getPopulationForLocation(location.location), 0)
+    
+    const avgRiskScore = realTimeRiskAssessments.length > 0 ?
+      realTimeRiskAssessments.reduce((sum, assessment) => sum + assessment.riskScore, 0) / realTimeRiskAssessments.length : 50
+
+    const baseMultiplier = avgRiskScore / 100 // Scale risk multiplier based on actual risk
+    
+    return [
+      { 
+        group: "Children (0-12)", 
+        population: Math.round(totalPopulation * 0.15), // 15% of population 
+        riskMultiplier: Number((2.5 + baseMultiplier).toFixed(1)), 
+        priority: avgRiskScore > 70 ? "Critical" : avgRiskScore > 50 ? "High" : "Medium"
+      },
+      { 
+        group: "Pregnant Women", 
+        population: Math.round(totalPopulation * 0.04), // 4% of population
+        riskMultiplier: Number((2.2 + baseMultiplier).toFixed(1)), 
+        priority: avgRiskScore > 60 ? "Critical" : avgRiskScore > 40 ? "High" : "Medium"
+      },
+      { 
+        group: "Elderly (65+)", 
+        population: Math.round(totalPopulation * 0.08), // 8% of population
+        riskMultiplier: Number((1.8 + baseMultiplier).toFixed(1)), 
+        priority: avgRiskScore > 65 ? "High" : avgRiskScore > 45 ? "Medium" : "Low"
+      },
+      { 
+        group: "Immunocompromised", 
+        population: Math.round(totalPopulation * 0.02), // 2% of population
+        riskMultiplier: Number((2.0 + baseMultiplier).toFixed(1)), 
+        priority: avgRiskScore > 55 ? "Critical" : avgRiskScore > 35 ? "High" : "Medium"
+      }
+    ]
+  }, [state.currentData, realTimeRiskAssessments])
 
   const getRiskColor = (risk: string) => {
     switch (risk.toLowerCase()) {
@@ -257,7 +371,7 @@ export function RiskAssessment() {
             {/* Risk Categories */}
             <div className="space-y-3">
               <h4 className="text-sm font-medium">Risk Categories</h4>
-              {riskFactors.map((factor) => {
+              {dynamicRiskFactors.map((factor) => {
                 const Icon = factor.icon
                 return (
                   <div key={factor.category} className="p-3 bg-muted/50 rounded-lg">
@@ -336,7 +450,7 @@ export function RiskAssessment() {
           <TabsContent value="vulnerable" className="space-y-4">
             <div className="space-y-3">
               <h4 className="text-sm font-medium">Vulnerable Population Analysis</h4>
-              {vulnerableGroups.map((group, index) => (
+              {dynamicVulnerableGroups.map((group, index) => (
                 <div key={index} className="p-3 bg-muted/50 rounded-lg">
                   <div className="flex items-center justify-between mb-2">
                     <div>
