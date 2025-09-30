@@ -2,6 +2,7 @@ import type React from "react"
 import type { Metadata } from "next"
 import "./globals.css"
 import { ThemeProvider } from "@/components/theme-provider"
+import { RealTimeDataProvider } from "@/contexts/real-time-data-context"
 
 export const metadata: Metadata = {
   title: "HMPI Monitor - Heavy Metal Pollution Indices",
@@ -23,7 +24,9 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          {children}
+          <RealTimeDataProvider>
+            {children}
+          </RealTimeDataProvider>
         </ThemeProvider>
       </body>
     </html>

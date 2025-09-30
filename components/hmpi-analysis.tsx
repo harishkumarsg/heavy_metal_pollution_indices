@@ -1,70 +1,79 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Progress } from "@/components/ui/progress"
-import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar } from "recharts"
-import { Calculator, AlertTriangle, CheckCircle, TrendingUp, MapPin, Calendar } from "lucide-react"
+import { ResponsiveContainer, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Radar, LineChart, Line, XAxis, YAxis, Tooltip, CartesianGrid } from "recharts"
+import { Calculator, AlertTriangle, CheckCircle, TrendingUp, MapPin, Calendar, Zap } from "lucide-react"
+import { useRealTimeData, useLocationData } from "@/contexts/real-time-data-context"
 
-const locationData = [
-  {
-    location: "Delhi Yamuna",
-    coordinates: "28.6139, 77.2090",
-    hmpi: 85.2,
-    status: "Critical",
-    metals: {
-      lead: { value: 0.85, limit: 0.01, ratio: 85 },
-      mercury: { value: 0.012, limit: 0.001, ratio: 12 },
-      cadmium: { value: 0.025, limit: 0.003, ratio: 8.3 },
-      arsenic: { value: 0.045, limit: 0.01, ratio: 4.5 },
-      chromium: { value: 0.15, limit: 0.05, ratio: 3 },
-    },
-    lastUpdated: "2025-01-28",
-  },
-  {
-    location: "Mumbai Mithi River",
-    coordinates: "19.0760, 72.8777",
-    hmpi: 64.7,
-    status: "Moderate",
-    metals: {
-      lead: { value: 0.032, limit: 0.01, ratio: 3.2 },
-      mercury: { value: 0.008, limit: 0.001, ratio: 8 },
-      cadmium: { value: 0.015, limit: 0.003, ratio: 5 },
-      arsenic: { value: 0.028, limit: 0.01, ratio: 2.8 },
-      chromium: { value: 0.089, limit: 0.05, ratio: 1.78 },
-    },
-    lastUpdated: "2025-01-27",
-  },
-  {
-    location: "Chennai Marina",
-    coordinates: "13.0827, 80.2707",
-    hmpi: 42.1,
-    status: "Safe",
-    metals: {
-      lead: { value: 0.008, limit: 0.01, ratio: 0.8 },
-      mercury: { value: 0.0005, limit: 0.001, ratio: 0.5 },
-      cadmium: { value: 0.002, limit: 0.003, ratio: 0.67 },
-      arsenic: { value: 0.006, limit: 0.01, ratio: 0.6 },
-      chromium: { value: 0.025, limit: 0.05, ratio: 0.5 },
-    },
-    lastUpdated: "2025-01-26",
-  },
-]
-
-const radarData = [
-  { metal: "Lead", value: 85, limit: 100 },
-  { metal: "Mercury", value: 12, limit: 100 },
-  { metal: "Cadmium", value: 8.3, limit: 100 },
-  { metal: "Arsenic", value: 4.5, limit: 100 },
-  { metal: "Chromium", value: 3, limit: 100 },
-]
+// Metal safety limits (WHO standards in μg/L)
+const METAL_LIMITS = {
+  'Lead': 10,
+  'Mercury': 6,
+  'Cadmium': 3,
+  'Arsenic': 10,
+  'Zinc': 5000,
+  'Copper': 2000,
+  'Chromium': 50,
+  'Nickel': 70
+}
 
 export function HMPIAnalysis() {
   const [selectedLocation, setSelectedLocation] = useState("Delhi Yamuna")
-  const currentData = locationData.find((loc) => loc.location === selectedLocation) || locationData[0]
+  const { state } = useRealTimeData()
+  const { data: locationData, isStale, lastUpdate } = useLocationData(selectedLocation)
+  
+  // Generate historical trend data for the selected location
+  const historicalTrend = useMemo(() => {
+    if (!state.historicalData.length) return []
+    
+    return state.historicalData
+      .filter(data => data.location === selectedLocation)
+      .slice(-20) // Last 20 readings
+      .map(data => ({
+        time: data.timestamp.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+        hmpi: data.hmpi,
+        timestamp: data.timestamp.getTime()
+      }))
+      .sort((a, b) => a.timestamp - b.timestamp)
+  }, [state.historicalData, selectedLocation])
+  
+  // Calculate radar chart data from real-time metal readings
+  const radarData = useMemo(() => {
+    if (!locationData) return []
+    
+    return locationData.metals.map(metal => {
+      const limit = METAL_LIMITS[metal.metal as keyof typeof METAL_LIMITS] || 100
+      const ratio = (metal.value / limit) * 100
+      
+      return {
+        metal: metal.metal,
+        value: Math.min(ratio, 500), // Cap at 500%
+        limit: 100,
+        status: metal.status
+      }
+    })
+  }, [locationData])
+  
+  // Determine overall status based on real-time HMPI
+  const getStatus = (hmpi: number) => {
+    if (hmpi >= 100) return 'Critical'
+    if (hmpi >= 50) return 'Moderate'
+    return 'Safe'
+  }
+  
+  const currentStatus = locationData ? getStatus(locationData.hmpi) : 'Unknown'
+  
+  // Auto-select first location when data becomes available
+  useEffect(() => {
+    if (state.currentData.length > 0 && !state.currentData.find(d => d.location === selectedLocation)) {
+      setSelectedLocation(state.currentData[0].location)
+    }
+  }, [state.currentData, selectedLocation])
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -116,40 +125,51 @@ export function HMPIAnalysis() {
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              {locationData.map((location) => (
-                <SelectItem key={location.location} value={location.location}>
-                  {location.location}
-                </SelectItem>
-              ))}
+              {state.currentData && state.currentData.length > 0 ? (
+                state.currentData.map((data) => (
+                  <SelectItem key={data.location} value={data.location}>
+                    {data.location}
+                  </SelectItem>
+                ))
+              ) : (
+                <SelectItem value="loading">Loading locations...</SelectItem>
+              )}
             </SelectContent>
           </Select>
         </div>
       </CardHeader>
       <CardContent className="space-y-6">
         {/* Current Location Overview */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Location</p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <MapPin className="h-3 w-3" />
-              {currentData.coordinates}
-            </p>
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium">HMPI Score</p>
-            <div className="flex items-center gap-2">
-              <span className={`text-2xl font-bold ${getStatusColor(currentData.status)}`}>{currentData.hmpi}</span>
-              {getStatusBadge(currentData.status)}
+        {locationData && (
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 p-4 bg-muted/50 rounded-lg">
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Location</p>
+              <p className="text-xs text-muted-foreground flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                {selectedLocation}
+              </p>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">HMPI Score</p>
+              <div className="flex items-center gap-2">
+                <span className={`text-2xl font-bold ${getStatusColor(currentStatus)}`}>
+                  {locationData.hmpi.toFixed(1)}
+                </span>
+                {getStatusBadge(currentStatus)}
+              </div>
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium">Last Updated</p>
+              <div className="flex items-center gap-2">
+                <Calendar className="h-3 w-3" />
+                <span className={`text-xs ${isStale ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  {locationData.timestamp.toLocaleTimeString()}
+                </span>
+                {isStale && <Zap className="h-3 w-3 text-red-500" />}
+              </div>
             </div>
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium">Last Updated</p>
-            <p className="text-xs text-muted-foreground flex items-center gap-1">
-              <Calendar className="h-3 w-3" />
-              {currentData.lastUpdated}
-            </p>
-          </div>
-        </div>
+        )}
 
         {/* HMPI Formula Explanation */}
         <div className="bg-background border border-border rounded-lg p-4">
@@ -164,33 +184,41 @@ export function HMPIAnalysis() {
         </div>
 
         {/* Metal Breakdown */}
-        <div className="space-y-4">
-          <h4 className="text-sm font-medium">Heavy Metal Breakdown</h4>
-          {Object.entries(currentData.metals).map(([metal, data]) => (
-            <div key={metal} className="space-y-2">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium capitalize">{metal}</span>
-                  {data.ratio > 1 && <AlertTriangle className="h-4 w-4 text-destructive" />}
-                  {data.ratio <= 1 && <CheckCircle className="h-4 w-4 text-green-500" />}
+        {locationData && (
+          <div className="space-y-4">
+            <h4 className="text-sm font-medium">Heavy Metal Breakdown</h4>
+            {locationData.metals.map((metal) => {
+              const limit = METAL_LIMITS[metal.metal as keyof typeof METAL_LIMITS] || 100
+              const ratio = metal.value / limit
+              
+              return (
+                <div key={metal.metal} className="space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium">{metal.metal}</span>
+                      {metal.status === 'critical' && <AlertTriangle className="h-4 w-4 text-red-500" />}
+                      {metal.status === 'warning' && <AlertTriangle className="h-4 w-4 text-yellow-500" />}
+                      {metal.status === 'normal' && <CheckCircle className="h-4 w-4 text-green-500" />}
+                    </div>
+                    <div className="text-right">
+                      <div className="text-sm font-medium">{metal.value.toFixed(2)} {metal.unit}</div>
+                      <div className="text-xs text-muted-foreground">Limit: {limit} {metal.unit}</div>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <Progress value={Math.min(ratio * 100, 100)} className="h-2" />
+                    <div className="flex justify-between text-xs">
+                      <span className={ratio > 1 ? "text-red-500" : "text-green-500"}>
+                        {ratio.toFixed(1)}x limit
+                      </span>
+                      <span className="text-muted-foreground">{ratio > 1 ? "Exceeds" : "Within"} safe limits</span>
+                    </div>
+                  </div>
                 </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium">{data.value} mg/L</div>
-                  <div className="text-xs text-muted-foreground">Limit: {data.limit} mg/L</div>
-                </div>
-              </div>
-              <div className="space-y-1">
-                <Progress value={Math.min(data.ratio * 10, 100)} className="h-2" />
-                <div className="flex justify-between text-xs">
-                  <span className={data.ratio > 1 ? "text-destructive" : "text-green-500"}>
-                    {data.ratio.toFixed(1)}x limit
-                  </span>
-                  <span className="text-muted-foreground">{data.ratio > 1 ? "Exceeds" : "Within"} safe limits</span>
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
+              )
+            })}
+          </div>
+        )}
 
         {/* Radar Chart */}
         <div className="space-y-4">
@@ -225,7 +253,7 @@ export function HMPIAnalysis() {
             Action-Oriented Insights
           </h4>
           <div className="space-y-2 text-sm">
-            {currentData.status === "Critical" && (
+            {currentStatus === "Critical" && (
               <>
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-destructive mt-0.5" />
@@ -242,7 +270,7 @@ export function HMPIAnalysis() {
                 </div>
               </>
             )}
-            {currentData.status === "Moderate" && (
+            {currentStatus === "Moderate" && (
               <>
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="h-4 w-4 text-yellow-500 mt-0.5" />
@@ -259,7 +287,7 @@ export function HMPIAnalysis() {
                 </div>
               </>
             )}
-            {currentData.status === "Safe" && (
+            {currentStatus === "Safe" && (
               <>
                 <div className="flex items-start gap-2">
                   <CheckCircle className="h-4 w-4 text-green-500 mt-0.5" />
