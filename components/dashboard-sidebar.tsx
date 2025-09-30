@@ -16,6 +16,7 @@ import {
   TrendingUp,
   Shield,
   Users,
+  Brain,
 } from "lucide-react"
 
 const navigation = [
@@ -45,6 +46,12 @@ const navigation = [
     href: "/dashboard/forecasting",
     icon: TrendingUp,
     badge: "Beta",
+  },
+  {
+    name: "ML Laboratory",
+    href: "/dashboard/ml",
+    icon: Brain,
+    badge: "New",
   },
   {
     name: "Reports",
