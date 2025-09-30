@@ -63,7 +63,9 @@ class LSTMForecaster {
     }
 
     const predictions = []
-    const baseValue = historicalData[historicalData.length - 1]?.hmpi || 75
+    // Handle both new API data format and legacy format
+    const latestData = historicalData[historicalData.length - 1]
+    const baseValue = latestData?.hmpi || latestData?.value || 75
     const trend = this.calculateTrend(historicalData)
     const seasonality = this.calculateSeasonality(historicalData)
     
@@ -107,7 +109,7 @@ class LSTMForecaster {
     
     const recentData = data.slice(-10) // Last 10 data points
     const x = recentData.map((_, i) => i)
-    const y = recentData.map(d => d.hmpi)
+    const y = recentData.map(d => d.hmpi || 50)
     
     // Simple linear regression for trend
     const n = recentData.length
@@ -148,7 +150,7 @@ class LSTMForecaster {
 
   private generateInsights(historical: any[], predictions: any[]): string[] {
     const insights = []
-    const avgHistorical = historical.reduce((sum, d) => sum + d.hmpi, 0) / historical.length
+    const avgHistorical = historical.reduce((sum, d) => sum + (d.hmpi || d.value || 50), 0) / historical.length
     const avgPredicted = predictions.reduce((sum, p) => sum + p.value, 0) / predictions.length
     
     if (avgPredicted > avgHistorical * 1.1) {
@@ -345,9 +347,10 @@ class XGBoostForecaster {
   }
 
   private extractFeatures(data: any[]) {
+    const values = data.map(d => d.hmpi || d.value || 50)
     return {
-      mean: data.reduce((sum, d) => sum + d.hmpi, 0) / data.length,
-      std: this.calculateStd(data.map(d => d.hmpi)),
+      mean: values.reduce((sum, val) => sum + val, 0) / values.length,
+      std: this.calculateStd(values),
       trend: this.calculateTrend(data),
       volatility: this.calculateVolatility(data)
     }
@@ -355,12 +358,13 @@ class XGBoostForecaster {
 
   private getLaggedFeatures(data: any[], futureDay: number) {
     const recent = data.slice(-7) // Last 7 days
+    const getValue = (d: any) => d.hmpi || d.value || 50
     return {
-      lag1: recent[recent.length - 1]?.hmpi || 0,
-      lag3: recent[recent.length - 3]?.hmpi || 0,
-      lag7: recent[0]?.hmpi || 0,
-      ma3: recent.slice(-3).reduce((sum, d) => sum + d.hmpi, 0) / 3,
-      ma7: recent.reduce((sum, d) => sum + d.hmpi, 0) / recent.length
+      lag1: getValue(recent[recent.length - 1]),
+      lag3: getValue(recent[recent.length - 3]),
+      lag7: getValue(recent[0]),
+      ma3: recent.slice(-3).reduce((sum, d) => sum + getValue(d), 0) / 3,
+      ma7: recent.reduce((sum, d) => sum + getValue(d), 0) / recent.length
     }
   }
 
@@ -404,16 +408,18 @@ class XGBoostForecaster {
     if (data.length < 2) return 0
     const first = data.slice(0, Math.floor(data.length / 2))
     const last = data.slice(Math.floor(data.length / 2))
-    const firstAvg = first.reduce((sum, d) => sum + d.hmpi, 0) / first.length
-    const lastAvg = last.reduce((sum, d) => sum + d.hmpi, 0) / last.length
+    const getValue = (d: any) => d.hmpi || d.value || 50
+    const firstAvg = first.reduce((sum, d) => sum + getValue(d), 0) / first.length
+    const lastAvg = last.reduce((sum, d) => sum + getValue(d), 0) / last.length
     return lastAvg - firstAvg
   }
 
   private calculateVolatility(data: any[]): number {
     if (data.length < 2) return 0
+    const getValue = (d: any) => d.hmpi || d.value || 50
     const changes = []
     for (let i = 1; i < data.length; i++) {
-      changes.push(Math.abs(data[i].hmpi - data[i-1].hmpi))
+      changes.push(Math.abs(getValue(data[i]) - getValue(data[i-1])))
     }
     return changes.reduce((sum, change) => sum + change, 0) / changes.length
   }
@@ -564,14 +570,16 @@ export class AdvancedMLService {
   detectAnomalies(historicalData: any[], threshold: number = 2.5): AnomalyResult[] {
     if (historicalData.length < 10) return []
 
-    const values = historicalData.map(d => d.hmpi)
+    const getValue = (d: any) => d.hmpi || d.value || 50
+    const values = historicalData.map(getValue)
     const mean = values.reduce((sum, val) => sum + val, 0) / values.length
     const std = Math.sqrt(values.reduce((sum, val) => sum + Math.pow(val - mean, 2), 0) / values.length)
 
     const anomalies: AnomalyResult[] = []
 
     historicalData.forEach(data => {
-      const zScore = Math.abs((data.hmpi - mean) / std)
+      const currentValue = getValue(data)
+      const zScore = Math.abs((currentValue - mean) / std)
       
       if (zScore > threshold) {
         let severity: 'low' | 'medium' | 'high' | 'critical'
@@ -592,8 +600,8 @@ export class AdvancedMLService {
         }
 
         anomalies.push({
-          timestamp: data.timestamp,
-          actual_value: data.hmpi,
+          timestamp: data.timestamp || new Date(),
+          actual_value: currentValue,
           expected_value: mean,
           anomaly_score: zScore,
           severity,

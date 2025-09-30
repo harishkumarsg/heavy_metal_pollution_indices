@@ -10,6 +10,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, PieChart, Pie, Cell } from "recharts"
 import { AlertTriangle, CheckCircle, TrendingUp, Droplets, MapPin, Users, FileText, RefreshCw, Filter, Activity, Zap } from "lucide-react"
 import { DataSourceIndicator } from "@/components/data-source-indicator"
+import { SmartInsightsOverview } from "@/components/smart-insights-overview"
 import { useRealTimeData } from "@/contexts/real-time-data-context"
 
 export function DashboardOverview() {
@@ -296,6 +297,9 @@ export function DashboardOverview() {
             )}
           </CardContent>
         </Card>
+
+        {/* Smart Insights Overview */}
+        <SmartInsightsOverview />
 
         {/* Quick Actions */}
         <Card className="bg-card/80 backdrop-blur-sm border-border">

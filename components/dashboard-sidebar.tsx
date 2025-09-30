@@ -17,6 +17,7 @@ import {
   Shield,
   Users,
   Brain,
+  Lightbulb,
 } from "lucide-react"
 
 const navigation = [
@@ -42,16 +43,10 @@ const navigation = [
     icon: BarChart3,
   },
   {
-    name: "AI Forecasting",
-    href: "/dashboard/forecasting",
-    icon: TrendingUp,
-    badge: "Beta",
-  },
-  {
-    name: "ML Laboratory",
+    name: "AI & ML Laboratory",
     href: "/dashboard/ml",
     icon: Brain,
-    badge: "New",
+    badge: "AI",
   },
   {
     name: "Reports",
